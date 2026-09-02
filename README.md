@@ -1,142 +1,71 @@
 <div align="center">
 
-# 🚀 AY-Tunnel
+<img src="web/icons/Icon-512.png" width="96" alt="AY-Tunnel logo" />
 
-### کلاینت مدرن V2Ray / Xray ساخته‌شده با Flutter
+# AY-Tunnel
 
-یک اپ چندسکویی، سبک و زیبا برای مدیریت و اتصال به سرورهای V2Ray —
-با پشتیبانی از لینک‌های اشتراک `vmess`، `vless`، `trojan` و `ss`.
+**اتصال سریع، امن و بدون دردسر.**
 
-[![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
-[![Dart](https://img.shields.io/badge/Dart-3.x-0175C2?logo=dart&logoColor=white)](https://dart.dev)
-[![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20iOS%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux-informational)](#-پلتفرم‌های-پشتیبانی‌شده)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](#-مجوز)
+[![Flutter](https://img.shields.io/badge/Flutter-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
+[![Dart](https://img.shields.io/badge/Dart-0175C2?logo=dart&logoColor=white)](https://dart.dev)
+[![Platform](https://img.shields.io/badge/Android%20%7C%20iOS%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux-2b2b2b)](#)
+[![License: MIT](https://img.shields.io/badge/License-MIT-4c9a2a.svg)](#license)
+
+</div>
+
+<br/>
+
+<div align="center">
+<img src="https://placehold.co/220x460/111318/6c8dff?text=AY-Tunnel" width="220" alt="AY-Tunnel screenshot" />
+</div>
+
+<br/>
+
+**AY-Tunnel** یک کلاینت V2Ray/Xray مدرن و سبک برای مدیریت و اتصال به سرورهای شخصی‌ـه.
+طراحی‌شده برای سرعت، سادگی و کنترل کامل روی سرورهای خودت — بدون هیچ افزوده‌ی اضافی.
+
+---
+
+## ویژگی‌ها
+
+- **افزودن سریع سرور** — با پیست‌کردن لینک اشتراک (`vmess` · `vless` · `trojan` · `ss`)
+- **تست تأخیر آنی** — بهترین سرور رو با یک لمس پیدا کن
+- **اتصال یک‌لمسی** — بدون تنظیمات پیچیده
+- **مانیتورینگ زنده** — سرعت آپلود/دانلود و مدت‌زمان اتصال
+- **رابط کاربری فارسی و راست‌به‌راست**، تیره و مینیمال
+- **چندسکویی** — Android، iOS، Windows، macOS، Linux
+
+---
+
+## پلتفرم‌ها
+
+<div align="center">
+
+| Android | iOS | Windows | macOS | Linux |
+|:---:|:---:|:---:|:---:|:---:|
+| ✅ | ✅ | ✅ | ✅ | ✅ |
 
 </div>
 
 ---
 
-## ✨ امکانات
+## دربارهٔ پروژه
 
-| | |
-|---|---|
-| 🔗 | افزودن سرور با پیست کردن لینک اشتراک (`vmess://`, `vless://`, `trojan://`, `ss://`) |
-| 💾 | ذخیره‌ی خودکار لیست سرورها روی خود دستگاه |
-| ⚡ | تست پینگ (تأخیر) هر سرور با یک لمس |
-| 🔌 | اتصال / قطع اتصال سریع و ساده |
-| 📊 | نمایش زنده‌ی وضعیت اتصال، سرعت آپلود/دانلود و مدت زمان |
-| 🌗 | ظاهر تیره و مینیمال بر پایه‌ی Material 3 |
-| 🌍 | رابط کاربری راست‌به‌چپ و فارسی از پایه |
+AY-Tunnel با Flutter ساخته شده و از موتور V2Ray استفاده می‌کنه؛ هدفش یه تجربه‌ی
+تمیز و قابل‌اعتماده برای کسایی که سرورهای خودشون رو دارن و فقط یه کلاینت خوب
+می‌خوان، بدون شلوغی و تبلیغات اضافه.
 
 ---
 
-## 🖥️ پلتفرم‌های پشتیبانی‌شده
+## مجوز
+
+<a name="license"></a>
+این پروژه تحت مجوز MIT منتشر شده.
 
 <div align="center">
 
-| Android | iOS | Windows | macOS | Linux | Web |
-|:---:|:---:|:---:|:---:|:---:|:---:|
-| ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ فقط مدیریت لیست سرورها* |
+—
 
-</div>
-
-> \* پکیج هسته‌ی V2Ray (`flutter_v2ray`) یک پلاگین نیتیوعه و روی Web قابلیت اتصال واقعی VPN رو پشتیبانی نمی‌کنه.
-
----
-
-## 🧱 ساختار پروژه
-
-```
-lib/
-├── main.dart                     # نقطه‌ی شروع برنامه
-├── models/
-│   └── vpn_server.dart           # مدل داده‌ی یک پروفایل سرور
-├── services/
-│   └── storage_service.dart      # ذخیره و بازیابی لیست سرورها
-├── screens/
-│   └── home_screen.dart          # صفحه‌ی اصلی (لیست سرورها + اتصال)
-└── widgets/                      # ویجت‌های قابل‌استفاده‌ی مجدد
-```
-
----
-
-## 🚀 شروع سریع
-
-### پیش‌نیاز
-- [Flutter SDK](https://docs.flutter.dev/get-started/install) نصب‌شده روی سیستم
-
-### مراحل
-
-```bash
-# ۱. کلون کردن پروژه
-git clone https://github.com/AmiraliYavari/AY-Tunnel.git
-cd AY-Tunnel
-
-# ۲. نصب وابستگی‌ها
-flutter pub get
-
-# ۳. اجرا (ترجیحاً روی گوشی/دستگاه واقعی؛ VPN رو نمیشه درست روی شبیه‌ساز تست کرد)
-flutter run
-```
-
----
-
-## 📦 آماده‌سازی برای انتشار در Google Play
-
-طبق مستندات پکیج [`flutter_v2ray`](https://pub.dev/packages/flutter_v2ray)، قبل از ساخت نسخه‌ی release دو تغییر لازمه:
-
-**`android/gradle.properties`**
-```properties
-android.bundle.enableUncompressedNativeLibs=false
-```
-
-**`android/app/build.gradle`** — بلاک `buildTypes` رو با این جایگزین کن:
-```gradle
-splits {
-    abi {
-        enable true
-        reset()
-        include "x86_64", "armeabi-v7a", "arm64-v8a"
-        universalApk true
-    }
-}
-
-buildTypes {
-    release {
-        signingConfig signingConfigs.release
-        ndk {
-            abiFilters "x86_64", "armeabi-v7a", "arm64-v8a"
-            debugSymbolLevel 'FULL'
-        }
-    }
-}
-```
-
----
-
-## 🗺️ نقشه‌ی راه
-
-- [ ] اسکن QR Code برای وارد کردن سرور (پکیج `mobile_scanner`)
-- [ ] پشتیبانی از subscription URL برای وارد کردن گروهی سرورها
-- [ ] حالت «فقط پروکسی» (`proxyOnly: true`)
-- [ ] اتصال خودکار به آخرین سرور بعد از باز کردن اپ
-- [ ] گروه‌بندی و جستجوی سرورها
-
----
-
-## ⚠️ نکته‌ی مهم درباره‌ی استفاده
-
-این ابزار یک کلاینت پروکسی/VPN عمومیه. استفاده ازش رو با قوانین محل زندگیت و
-شرایط استفاده‌ی سرویس‌دهنده‌ای که بهش وصل می‌شی هماهنگ کن.
-
----
-
-## 📄 مجوز
-
-این پروژه تحت مجوز MIT منتشر شده — آزادانه استفاده، تغییر و توزیع کن.
-
-<div align="center">
-
-ساخته‌شده با 💙 و Flutter
+**AY-Tunnel** · ساخته‌شده توسط Amirali Yavari
 
 </div>
