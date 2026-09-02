@@ -65,20 +65,49 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  // --- افزودن سرور از طریق لینک اشتراک ---
+  // --- افزودن سرور از طریق لینک اشتراک (تکی یا گروهی) ---
+
+  /// یک تکه متن که ممکنه شامل چند لینک کانفیگ باشه رو (چه با خط جدید از هم
+  /// جدا شده باشن، چه بدون هیچ جداکننده‌ای به هم چسبیده باشن) به لینک‌های
+  /// مستقل می‌شکونه. ملاک شکستن، شروع هر پروتکل پشتیبانی‌شده‌ست
+  /// (vmess:// | vless:// | trojan:// | ss://).
+  List<String> _splitConfigBlob(String input) {
+    // بعضی اپ‌ها بین کانفیگ‌ها یه کاراکتر نامرئی (Object Replacement Character)
+    // می‌ذارن؛ اون رو با خط جدید عوض می‌کنیم که تمیزتر جدا بشه.
+    final cleaned = input.replaceAll('\uFFFC', '\n');
+
+    final starts = RegExp(r'(?=(?:vmess|vless|trojan|ss)://)')
+        .allMatches(cleaned)
+        .map((m) => m.start)
+        .toList();
+
+    if (starts.isEmpty) {
+      final trimmed = cleaned.trim();
+      return trimmed.isEmpty ? [] : [trimmed];
+    }
+
+    final parts = <String>[];
+    for (var i = 0; i < starts.length; i++) {
+      final end = i + 1 < starts.length ? starts[i + 1] : cleaned.length;
+      final part = cleaned.substring(starts[i], end).trim();
+      if (part.isNotEmpty) parts.add(part);
+    }
+    return parts;
+  }
+
   Future<void> _showAddServerDialog() async {
     final controller = TextEditingController();
-    final link = await showDialog<String>(
+    final input = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('افزودن سرور جدید'),
+        title: const Text('افزودن سرور (تکی یا گروهی)'),
         content: TextField(
           controller: controller,
-          maxLines: 4,
+          maxLines: 6,
           textDirection: TextDirection.ltr,
           decoration: const InputDecoration(
-            hintText: 'لینک را اینجا پیست کنید (vmess://, vless://, trojan://, ss://)',
-            border: OutlineInputBorder(),
+            hintText:
+                'یک یا چند لینک (vmess://, vless://, trojan://, ss://) رو پیست کن؛ لازم نیست خودت جداشون کنی.',
           ),
         ),
         actions: [
@@ -87,28 +116,46 @@ class _HomeScreenState extends State<HomeScreen> {
             child: const Text('انصراف'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            onPressed: () => Navigator.pop(ctx, controller.text),
             child: const Text('افزودن'),
           ),
         ],
       ),
     );
 
-    if (link == null || link.isEmpty) return;
+    if (input == null || input.trim().isEmpty) return;
 
-    try {
-      final parsed = FlutterV2ray.parseFromURL(link);
-      final newServer = VpnServer(
-        id: _uuid.v4(),
-        remark: parsed.remark.isNotEmpty ? parsed.remark : 'سرور بدون‌نام',
-        rawLink: link,
-      );
-      setState(() => _servers.add(newServer));
-      await _storage.saveServers(_servers);
-    } catch (e) {
-      if (!mounted) return;
-      _showError('لینک نامعتبره یا فرمتش پشتیبانی نمیشه.\n$e');
+    final chunks = _splitConfigBlob(input);
+    var added = 0;
+    var failed = 0;
+
+    for (final chunk in chunks) {
+      try {
+        final parsed = FlutterV2ray.parseFromURL(chunk);
+        _servers.add(
+          VpnServer(
+            id: _uuid.v4(),
+            remark: parsed.remark.isNotEmpty ? parsed.remark : 'سرور بدون‌نام',
+            rawLink: chunk,
+          ),
+        );
+        added++;
+      } catch (_) {
+        failed++;
+      }
     }
+
+    if (added > 0) {
+      setState(() {});
+      await _storage.saveServers(_servers);
+    }
+
+    if (!mounted) return;
+    _showError(
+      failed == 0
+          ? '$added سرور با موفقیت اضافه شد.'
+          : '$added سرور اضافه شد، $failed موردش فرمت پشتیبانی‌شده نداشت.',
+    );
   }
 
   Future<void> _deleteServer(VpnServer server) async {
@@ -185,14 +232,27 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('کلاینت V2Ray من')),
+      appBar: AppBar(title: const Text('AY-Tunnel')),
       body: Column(
         children: [
           if (_vpnUnsupported) _buildUnsupportedBanner(),
           _buildStatusCard(),
           Expanded(
             child: _servers.isEmpty
-                ? const Center(child: Text('هنوز سروری اضافه نکردی'))
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.cloud_off,
+                            size: 40, color: Theme.of(context).colorScheme.primary.withOpacity(0.35)),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'هنوز سروری اضافه نکردی',
+                          style: TextStyle(color: Colors.black45),
+                        ),
+                      ],
+                    ),
+                  )
                 : ListView.builder(
                     itemCount: _servers.length,
                     itemBuilder: (ctx, i) => _buildServerTile(_servers[i]),
@@ -211,42 +271,94 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildUnsupportedBanner() {
     return Container(
       width: double.infinity,
-      color: Colors.orange.withOpacity(0.15),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Text(
-        kIsWeb
-            ? 'نسخه‌ی وب فقط برای مدیریت لیست سرورهاست؛ اتصال واقعی VPN رو باید از اپ موبایل/دسکتاپ انجام بدی.'
-            : 'اتصال V2Ray روی این دستگاه در دسترس نیست.',
-        style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.w600),
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF4E5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFFB74D).withOpacity(0.4)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline, color: Color(0xFFE65100), size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              kIsWeb
+                  ? 'نسخه‌ی وب فقط برای مدیریت لیست سرورهاست؛ اتصال واقعی VPN رو باید از اپ موبایل/دسکتاپ انجام بدی.'
+                  : 'اتصال V2Ray روی این دستگاه در دسترس نیست.',
+              style: const TextStyle(
+                color: Color(0xFFE65100),
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildStatusCard() {
     final isConnected = _connectedServerId != null;
+    final scheme = Theme.of(context).colorScheme;
+    final accent = isConnected ? const Color(0xFF2E7D32) : scheme.primary;
+
     return Card(
       margin: const EdgeInsets.all(12),
-      color: isConnected
-          ? Colors.green.withOpacity(0.15)
-          : Colors.grey.withOpacity(0.1),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: isConnected
+                ? [const Color(0xFFE8F7EC), const Color(0xFFF4FBF6)]
+                : [scheme.primary.withOpacity(0.08), Colors.white],
+          ),
+        ),
+        padding: const EdgeInsets.all(18),
+        child: Row(
           children: [
-            Text(
-              isConnected ? 'متصل' : 'قطع',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: isConnected ? Colors.green : Colors.grey,
-                    fontWeight: FontWeight.bold,
-                  ),
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: accent.withOpacity(0.12),
+              ),
+              child: Icon(
+                isConnected ? Icons.shield : Icons.shield_outlined,
+                color: accent,
+                size: 28,
+              ),
             ),
-            if (isConnected) ...[
-              const SizedBox(height: 8),
-              Text('آپلود: ${_status.uploadSpeed} B/s'),
-              Text('دانلود: ${_status.downloadSpeed} B/s'),
-              Text('مدت اتصال: ${_status.duration}'),
-            ],
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isConnected ? 'متصل' : 'قطع',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          color: accent,
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                  if (isConnected) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'آپلود ${_status.uploadSpeed} B/s   •   دانلود ${_status.downloadSpeed} B/s',
+                      style: const TextStyle(color: Colors.black54, fontSize: 12.5),
+                    ),
+                    Text(
+                      'مدت اتصال: ${_status.duration}',
+                      style: const TextStyle(color: Colors.black54, fontSize: 12.5),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -255,31 +367,50 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildServerTile(VpnServer server) {
     final isConnected = _connectedServerId == server.id;
-    return ListTile(
-      leading: Icon(
-        isConnected ? Icons.check_circle : Icons.dns_outlined,
-        color: isConnected ? Colors.green : null,
-      ),
-      title: Text(server.remark),
-      subtitle: Text(
-        server.lastPingMs != null ? '${server.lastPingMs} ms' : 'تست‌نشده',
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.speed),
-            tooltip: 'تست پینگ',
-            onPressed: () => _testPing(server),
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        leading: Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: isConnected
+                ? const Color(0xFF2E7D32).withOpacity(0.12)
+                : scheme.primary.withOpacity(0.10),
           ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
-            tooltip: 'حذف',
-            onPressed: () => _deleteServer(server),
+          child: Icon(
+            isConnected ? Icons.check_circle : Icons.dns_outlined,
+            color: isConnected ? const Color(0xFF2E7D32) : scheme.primary,
           ),
-        ],
+        ),
+        title: Text(
+          server.remark,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text(
+          server.lastPingMs != null ? '${server.lastPingMs} ms' : 'تست‌نشده',
+          style: const TextStyle(color: Colors.black45, fontSize: 12.5),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: Icon(Icons.speed, color: scheme.primary),
+              tooltip: 'تست پینگ',
+              onPressed: () => _testPing(server),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+              tooltip: 'حذف',
+              onPressed: () => _deleteServer(server),
+            ),
+          ],
+        ),
+        onTap: () => isConnected ? _disconnect() : _connect(server),
       ),
-      onTap: () => isConnected ? _disconnect() : _connect(server),
     );
   }
 }
