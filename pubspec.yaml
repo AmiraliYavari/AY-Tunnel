@@ -20,6 +20,12 @@ dependencies:
   # برای تولید شناسه‌ی یکتا برای هر سرور ذخیره‌شده
   uuid: ^4.4.0
 
+  # گرفتن محتوای لینک سابسکریپشن از اینترنت
+  http: ^1.2.0
+
+  # اسکن QR Code برای افزودن سرور
+  mobile_scanner: ^5.2.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -5,6 +5,12 @@ import 'package:uuid/uuid.dart';
 
 import '../models/vpn_server.dart';
 import '../services/storage_service.dart';
+import '../utils/config_parser.dart';
+import 'qr_scan_screen.dart';
+import 'stats_screen.dart';
+import 'subscriptions_screen.dart';
+
+enum _SortMode { favoriteFirst, byPing, byName }
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -18,23 +24,37 @@ class _HomeScreenState extends State<HomeScreen> {
   final _uuid = const Uuid();
 
   late final FlutterV2ray _v2ray = FlutterV2ray(
-    onStatusChanged: (status) {
-      setState(() => _status = status);
-    },
+    onStatusChanged: _onStatusChanged,
   );
 
   List<VpnServer> _servers = [];
   String? _connectedServerId;
   V2RayStatus _status = V2RayStatus();
   bool _isInitialized = false;
+  _SortMode _sortMode = _SortMode.favoriteFirst;
+
   // روی وب، پلاگین flutter_v2ray پشتیبانی نمیشه (کاناله نیتیو نداره)
   // پس اتصال VPN واقعی رو غیرفعال می‌کنیم ولی اپ رو گیر نمی‌ندازیم.
   bool _vpnUnsupported = false;
+
+  // شمارنده‌ی تقریبی مصرف نشست جاری؛ چون onStatusChanged هر ثانیه صدا زده
+  // میشه، سرعت لحظه‌ای رو تقریباً معادل بایت مصرف‌شده‌ی همون ثانیه در نظر
+  // می‌گیریم و موقع قطع اتصال، روی مجموع سرور ذخیره می‌کنیم.
+  int _sessionUploadBytes = 0;
+  int _sessionDownloadBytes = 0;
 
   @override
   void initState() {
     super.initState();
     _bootstrap();
+  }
+
+  void _onStatusChanged(V2RayStatus status) {
+    if (_connectedServerId != null) {
+      _sessionUploadBytes += status.uploadSpeed;
+      _sessionDownloadBytes += status.downloadSpeed;
+    }
+    setState(() => _status = status);
   }
 
   Future<void> _bootstrap() async {
@@ -67,34 +87,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // --- افزودن سرور از طریق لینک اشتراک (تکی یا گروهی) ---
 
-  /// یک تکه متن که ممکنه شامل چند لینک کانفیگ باشه رو (چه با خط جدید از هم
-  /// جدا شده باشن، چه بدون هیچ جداکننده‌ای به هم چسبیده باشن) به لینک‌های
-  /// مستقل می‌شکونه. ملاک شکستن، شروع هر پروتکل پشتیبانی‌شده‌ست
-  /// (vmess:// | vless:// | trojan:// | ss://).
-  List<String> _splitConfigBlob(String input) {
-    // بعضی اپ‌ها بین کانفیگ‌ها یه کاراکتر نامرئی (Object Replacement Character)
-    // می‌ذارن؛ اون رو با خط جدید عوض می‌کنیم که تمیزتر جدا بشه.
-    final cleaned = input.replaceAll('\uFFFC', '\n');
-
-    final starts = RegExp(r'(?=(?:vmess|vless|trojan|ss)://)')
-        .allMatches(cleaned)
-        .map((m) => m.start)
-        .toList();
-
-    if (starts.isEmpty) {
-      final trimmed = cleaned.trim();
-      return trimmed.isEmpty ? [] : [trimmed];
-    }
-
-    final parts = <String>[];
-    for (var i = 0; i < starts.length; i++) {
-      final end = i + 1 < starts.length ? starts[i + 1] : cleaned.length;
-      final part = cleaned.substring(starts[i], end).trim();
-      if (part.isNotEmpty) parts.add(part);
-    }
-    return parts;
-  }
-
   Future<void> _showAddServerDialog() async {
     final controller = TextEditingController();
     final input = await showDialog<String>(
@@ -124,19 +116,32 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     if (input == null || input.trim().isEmpty) return;
+    await _addRawLinks(splitConfigBlob(input));
+  }
 
-    final chunks = _splitConfigBlob(input);
+  Future<void> _scanQr() async {
+    final link = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (_) => const QrScanScreen()),
+    );
+    if (link == null) return;
+    await _addRawLinks([link]);
+  }
+
+  /// چند لینک خام رو پارس و به لیست سرورها اضافه می‌کنه؛ در پایان یه
+  /// خلاصه (تعداد موفق/ناموفق) نشون میده.
+  Future<void> _addRawLinks(List<String> links, {String? groupTag}) async {
     var added = 0;
     var failed = 0;
-
-    for (final chunk in chunks) {
+    for (final link in links) {
       try {
-        final parsed = FlutterV2ray.parseFromURL(chunk);
+        final parsed = FlutterV2ray.parseFromURL(link);
         _servers.add(
           VpnServer(
             id: _uuid.v4(),
             remark: parsed.remark.isNotEmpty ? parsed.remark : 'سرور بدون‌نام',
-            rawLink: chunk,
+            rawLink: link,
+            groupTag: groupTag,
           ),
         );
         added++;
@@ -151,11 +156,39 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (!mounted) return;
-    _showError(
+    _showInfo(
       failed == 0
           ? '$added سرور با موفقیت اضافه شد.'
           : '$added سرور اضافه شد، $failed موردش فرمت پشتیبانی‌شده نداشت.',
     );
+  }
+
+  /// وقتی یه سابسکریپشن به‌روزرسانی میشه، سرورهای قدیمی همون گروه حذف و
+  /// نسخه‌ی تازه جایگزین میشه (تا سرورهای منقضی‌شده توی لیست نمونن).
+  Future<void> _replaceGroupServers(String groupTag, List<String> rawLinks) async {
+    _servers.removeWhere((s) => s.groupTag == groupTag);
+    var added = 0;
+    for (final link in rawLinks) {
+      try {
+        final parsed = FlutterV2ray.parseFromURL(link);
+        _servers.add(
+          VpnServer(
+            id: _uuid.v4(),
+            remark: parsed.remark.isNotEmpty ? parsed.remark : 'سرور بدون‌نام',
+            rawLink: link,
+            groupTag: groupTag,
+          ),
+        );
+        added++;
+      } catch (_) {
+        // کانفیگ‌های نامعتبر داخل سابسکریپشن رو نادیده می‌گیریم.
+      }
+    }
+    setState(() {});
+    await _storage.saveServers(_servers);
+    if (added == 0) {
+      throw Exception('هیچ‌کدوم از کانفیگ‌های این سابسکریپشن معتبر نبودن.');
+    }
   }
 
   Future<void> _deleteServer(VpnServer server) async {
@@ -166,9 +199,14 @@ class _HomeScreenState extends State<HomeScreen> {
     await _storage.saveServers(_servers);
   }
 
+  Future<void> _toggleFavorite(VpnServer server) async {
+    setState(() => server.isFavorite = !server.isFavorite);
+    await _storage.saveServers(_servers);
+  }
+
   Future<void> _testPing(VpnServer server) async {
     if (_vpnUnsupported) {
-      _showError('تست پینگ روی این پلتفرم پشتیبانی نمیشه.');
+      _showInfo('تست پینگ روی این پلتفرم پشتیبانی نمیشه.');
       return;
     }
     try {
@@ -177,14 +215,15 @@ class _HomeScreenState extends State<HomeScreen> {
         config: parsed.getFullConfiguration(),
       );
       setState(() => server.lastPingMs = delay);
+      await _storage.saveServers(_servers);
     } catch (e) {
-      _showError('تست پینگ ناموفق بود.\n$e');
+      _showInfo('تست پینگ ناموفق بود.\n$e');
     }
   }
 
   Future<void> _connect(VpnServer server) async {
     if (_vpnUnsupported) {
-      _showError(
+      _showInfo(
         kIsWeb
             ? 'اتصال VPN روی نسخه‌ی وب پشتیبانی نمیشه. لطفاً از اپ Android/iOS/Desktop استفاده کن.'
             : 'مقداردهی V2Ray روی این دستگاه با خطا مواجه شد.',
@@ -196,7 +235,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
       final hasPermission = await _v2ray.requestPermission();
       if (!hasPermission) {
-        _showError('برای اتصال، باید مجوز VPN رو تأیید کنی.');
+        _showInfo('برای اتصال، باید مجوز VPN رو تأیید کنی.');
         return;
       }
 
@@ -208,20 +247,72 @@ class _HomeScreenState extends State<HomeScreen> {
         proxyOnly: false,
       );
 
+      _sessionUploadBytes = 0;
+      _sessionDownloadBytes = 0;
       setState(() => _connectedServerId = server.id);
     } catch (e) {
-      _showError('اتصال ناموفق بود.\n$e');
+      _showInfo('اتصال ناموفق بود.\n$e');
     }
   }
 
   Future<void> _disconnect() async {
     await _v2ray.stopV2Ray();
+    final connectedId = _connectedServerId;
+    if (connectedId != null) {
+      final server = _servers.where((s) => s.id == connectedId).firstOrNull;
+      if (server != null) {
+        server.totalUploadBytes += _sessionUploadBytes;
+        server.totalDownloadBytes += _sessionDownloadBytes;
+        await _storage.saveServers(_servers);
+      }
+    }
+    _sessionUploadBytes = 0;
+    _sessionDownloadBytes = 0;
     setState(() => _connectedServerId = null);
   }
 
-  void _showError(String message) {
+  void _showInfo(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
+    );
+  }
+
+  List<VpnServer> get _sortedServers {
+    final list = [..._servers];
+    switch (_sortMode) {
+      case _SortMode.favoriteFirst:
+        list.sort((a, b) {
+          if (a.isFavorite != b.isFavorite) return a.isFavorite ? -1 : 1;
+          return a.remark.compareTo(b.remark);
+        });
+        break;
+      case _SortMode.byPing:
+        list.sort((a, b) {
+          final ap = a.lastPingMs ?? 999999;
+          final bp = b.lastPingMs ?? 999999;
+          return ap.compareTo(bp);
+        });
+        break;
+      case _SortMode.byName:
+        list.sort((a, b) => a.remark.compareTo(b.remark));
+        break;
+    }
+    return list;
+  }
+
+  Future<void> _openSubscriptions() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SubscriptionsScreen(onServersUpdated: _replaceGroupServers),
+      ),
+    );
+  }
+
+  void _openStats() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => StatsScreen(servers: _servers)),
     );
   }
 
@@ -232,7 +323,31 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('AY-Tunnel')),
+      appBar: AppBar(
+        title: const Text('AY-Tunnel'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.bar_chart),
+            tooltip: 'آمار مصرف',
+            onPressed: _openStats,
+          ),
+          IconButton(
+            icon: const Icon(Icons.rss_feed),
+            tooltip: 'سابسکریپشن‌ها',
+            onPressed: _openSubscriptions,
+          ),
+          PopupMenuButton<_SortMode>(
+            icon: const Icon(Icons.sort),
+            tooltip: 'مرتب‌سازی',
+            onSelected: (mode) => setState(() => _sortMode = mode),
+            itemBuilder: (ctx) => const [
+              PopupMenuItem(value: _SortMode.favoriteFirst, child: Text('موردعلاقه‌ها اول')),
+              PopupMenuItem(value: _SortMode.byPing, child: Text('کمترین پینگ')),
+              PopupMenuItem(value: _SortMode.byName, child: Text('نام سرور')),
+            ],
+          ),
+        ],
+      ),
       body: Column(
         children: [
           if (_vpnUnsupported) _buildUnsupportedBanner(),
@@ -254,16 +369,29 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   )
                 : ListView.builder(
-                    itemCount: _servers.length,
-                    itemBuilder: (ctx, i) => _buildServerTile(_servers[i]),
+                    itemCount: _sortedServers.length,
+                    itemBuilder: (ctx, i) => _buildServerTile(_sortedServers[i]),
                   ),
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showAddServerDialog,
-        icon: const Icon(Icons.add),
-        label: const Text('افزودن سرور'),
+      floatingActionButton: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          FloatingActionButton(
+            heroTag: 'qr',
+            onPressed: _scanQr,
+            tooltip: 'اسکن QR',
+            child: const Icon(Icons.qr_code_scanner),
+          ),
+          const SizedBox(width: 12),
+          FloatingActionButton.extended(
+            heroTag: 'add',
+            onPressed: _showAddServerDialog,
+            icon: const Icon(Icons.add),
+            label: const Text('افزودن سرور'),
+          ),
+        ],
       ),
     );
   }
@@ -386,9 +514,30 @@ class _HomeScreenState extends State<HomeScreen> {
             color: isConnected ? const Color(0xFF2E7D32) : scheme.primary,
           ),
         ),
-        title: Text(
-          server.remark,
-          style: const TextStyle(fontWeight: FontWeight.w600),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                server.remark,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            if (server.groupTag != null) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: scheme.primary.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  server.groupTag!,
+                  style: TextStyle(fontSize: 10.5, color: scheme.primary, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ],
         ),
         subtitle: Text(
           server.lastPingMs != null ? '${server.lastPingMs} ms' : 'تست‌نشده',
@@ -397,6 +546,14 @@ class _HomeScreenState extends State<HomeScreen> {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            IconButton(
+              icon: Icon(
+                server.isFavorite ? Icons.star : Icons.star_border,
+                color: server.isFavorite ? Colors.amber[700] : Colors.black38,
+              ),
+              tooltip: 'موردعلاقه',
+              onPressed: () => _toggleFavorite(server),
+            ),
             IconButton(
               icon: Icon(Icons.speed, color: scheme.primary),
               tooltip: 'تست پینگ',
@@ -413,4 +570,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+}
+
+extension _FirstOrNull<T> on Iterable<T> {
+  T? get firstOrNull => isEmpty ? null : first;
 }
