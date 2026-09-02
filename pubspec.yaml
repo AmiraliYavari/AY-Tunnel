@@ -1,0 +1,29 @@
+name: v2ray_flutter_app
+description: "یک کلاینت ساده‌ی V2Ray/Xray برای اندروید، مشابه v2rayNG، ساخته‌شده با Flutter."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # هسته‌ی اتصال V2Ray/Xray (پروتکل‌های vmess, vless, trojan, shadowsocks)
+  flutter_v2ray: ^1.0.10
+
+  # ذخیره‌ی محلی لیست سرورها روی دستگاه
+  shared_preferences: ^2.2.3
+
+  # برای تولید شناسه‌ی یکتا برای هر سرور ذخیره‌شده
+  uuid: ^4.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
